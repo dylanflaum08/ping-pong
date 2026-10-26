@@ -1,0 +1,4 @@
+{%- set s = (tr or t).status -%}
+{%- if s == 'registration' -%}<span class="badge badge-reg">Signup open</span>
+{%- elif s == 'in_progress' -%}<span class="badge badge-live">In progress</span>
+{%- else -%}<span class="badge badge-done">Finished</span>{%- endif -%}

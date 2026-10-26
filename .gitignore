@@ -1,0 +1,6 @@
+# Local data: player names, results, and backups
+*.db
+*.db-wal
+*.db-shm
+secret_key.txt
+__pycache__/

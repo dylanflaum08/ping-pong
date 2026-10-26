@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — {{ t.name }}{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="15">{% endblock %}
+{% block content %}
+
+{% if t.type == 'bracket' and bracket and bracket.rounds %}
+<div class="card">
+  <div class="card-head">
+    <h1>Bracket</h1>
+    <span class="muted">{{ TYPES[t.type] }} · {% include "_status.html" %}</span>
+  </div>
+  <div id="bracket"></div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h1>{{ 'Leaderboard' if t.type == 'elo' else 'Standings' }}</h1>
+    <span class="muted">
+      {% if t.type == 'elo' %}Top {{ t.qualify_count }} with at least {{ t.min_games }} games advance
+      {% elif t.type == 'swiss' %}Round {{ t.current_round }} of {{ t.rounds }} · top {{ t.qualify_count }} by record
+      {% else %}Ranked by how far each player got{% endif %}
+      · {% include "_status.html" %}
+    </span>
+  </div>
+
+  {% set seeds = standings | selectattr('seed') | list %}
+  {% if standings %}
+    <table>
+      <thead>
+        <tr>
+          <th class="num">#</th><th>Player</th>{% if t.type == 'elo' %}<th class="num">Level</th>{% endif %}
+          {% if t.type == 'swiss' %}<th class="num">Record</th><th class="num" title="Total wins of everyone you've played — the tiebreaker">Opp. wins</th>{% endif %}
+          <th class="num">Rating</th>
+          {% if t.type != 'swiss' %}<th class="num">W–L</th>{% endif %}
+          <th class="num">Games</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in standings %}
+        <tr class="{{ 'inactive' if not p.active }}">
+          <td class="num">{{ p.rank }}</td>
+          <td><b>{{ p.name }}</b></td>
+          {% if t.type == 'elo' %}<td class="num"><span class="lvl">{{ p.level }}</span></td>{% endif %}
+          {% if t.type == 'swiss' %}
+            <td class="num"><b>{{ p.wins }}–{{ p.losses }}</b></td>
+            <td class="num">{{ p.opp_wins }}</td>
+          {% endif %}
+          <td class="num">{% if t.type == 'elo' %}<b>{{ p.elo }}</b>{% else %}{{ p.elo }}{% endif %}
+            {% set diff = p.elo - p.start_elo %}
+            {% if diff and t.type == 'elo' %}<span class="small {{ 'up' if diff > 0 else 'down' }}">{{ '%+d' % diff }}</span>{% endif %}
+          </td>
+          {% if t.type != 'swiss' %}<td class="num">{{ p.wins }}–{{ p.losses }}</td>{% endif %}
+          <td class="num">{{ p.games_played }}</td>
+          <td>
+            {% if t.type == 'bracket' %}
+              {% if p.bracket_status == 'Champion' %}<span class="badge badge-seed">🏆 Champion</span>
+              {% elif p.bracket_status == 'Still in' %}<span class="badge badge-live">Still in</span>
+              {% else %}<span class="muted small">{{ p.bracket_status }}</span>{% endif %}
+            {% elif not p.active %}<span class="badge">Withdrawn</span>
+            {% elif p.seed %}<span class="badge badge-seed">{{ 'Seed ' if t.type == 'elo' else 'Top ' ~ t.qualify_count ~ ' · #' }}{{ p.seed }}</span>
+            {% elif p.games_needed %}<span class="badge">Needs {{ p.games_needed }} more</span>
+            {% else %}<span class="muted small">Outside top {{ t.qualify_count }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No players have signed up yet.</p>
+  {% endif %}
+</div>
+
+{% if seeds %}
+<div class="card">
+  <h2>Current top {{ t.qualify_count }}{% if seeds|length < t.qualify_count %} <span class="muted small">({{ seeds|length }} eligible so far)</span>{% endif %}</h2>
+  <div class="chips">
+    {% for p in seeds %}<span class="chip"><b>{{ p.seed }}.</b> {{ p.name }} <span class="muted">{{ p.wins ~ '–' ~ p.losses if t.type == 'swiss' else p.elo }}</span></span>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<p class="muted small">
+  {% if t.type == 'swiss' %}
+    Each round pairs players with the same record (1–0 plays 1–0) and avoids rematches. With an odd number of players,
+    one player gets a bye, which counts as a win. Ties are broken by opponents' total wins, then rating.
+  {% elif t.type == 'bracket' %}
+    Single elimination: win and you move on. A player drawn against “Bye” goes straight through; a withdrawal is a forfeit.
+  {% endif %}
+  {% if t.type == 'elo' %}Ratings start at {{ elo.STARTING_ELO.values()|join(' / ') }} for levels 1–4.
+  {% else %}Everyone starts at a rating of {{ elo.STARTING_ELO[1] }}.{% endif %} Each win moves
+  {{ elo.BASE_POINTS - elo.SWING_POINTS }}–{{ elo.BASE_POINTS + elo.SWING_POINTS }} points from the loser to the winner:
+  {{ elo.BASE_POINTS }} for an even match, a little more for beating a higher-rated player, a little less for beating a lower-rated one.
+</p>
+{% endblock %}
+
+{% block scripts %}
+{% if t.type == 'bracket' and bracket and bracket.rounds %}
+<script src="{{ url_for('static', filename='bracket.js') }}"></script>
+<script>renderBracket(document.getElementById("bracket"), {{ bracket|tojson }});</script>
+{% endif %}
+{% endblock %}

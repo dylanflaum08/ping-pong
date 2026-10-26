@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ player.name }} — {{ t.name }}{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="10">{% endblock %}
+{% block topbar %}{% endblock %}
+{% block container_class %}narrow{% endblock %}
+{% block content %}
+<div class="hero">
+  <span class="ball"></span>
+  <h1>You're in, {{ player.first_name }}!</h1>
+  <p class="muted">{{ t.name }}{% if t.type == 'elo' %} · Level {{ player.level }}{% endif %}</p>
+</div>
+
+{% if current %}
+  {% set opp = current.p2 if current.player1_id == player.id else current.p1 %}
+  <div class="callout">
+    <div class="table-no">{{ "You're up · Table " ~ current.table_no if current.table_no else "On deck · next free table" }}{% if current.round %} · {{ round_label(current.round) }}{% endif %}</div>
+    <b>vs {{ opp.name }}</b>
+    <span class="small">{% if t.type != 'elo' %}{{ opp.wins }}–{{ opp.losses }} · Rating {{ opp.elo }}{% else %}Rating {{ opp.elo }} · Level {{ opp.level }}{% endif %}</span>
+  </div>
+{% elif t.status == 'registration' %}
+  <div class="card"><p>Signup is open. {{ 'The bracket is drawn' if t.type == 'bracket' else 'Matches start' }} once the organizers kick things off — keep an eye on the main screen.</p></div>
+{% elif t.status == 'completed' %}
+  <div class="card"><p>The tournament has ended. Thanks for playing!</p></div>
+{% elif not player.active %}
+  <div class="card"><p>You've been taken out of the rotation. Ask an organizer if that's a mistake.</p></div>
+{% elif t.type == 'bracket' and player.bracket_status == 'Champion' %}
+  <div class="callout"><b>🏆 Champion!</b><span class="small">You won the bracket.</span></div>
+{% elif t.type == 'bracket' and player.bracket_status == 'Not in bracket' %}
+  <div class="card"><p>The bracket was drawn before you signed up. Find an organizer if you should be in it.</p></div>
+{% elif t.type == 'bracket' and player.bracket_status != 'Still in' %}
+  <div class="card"><p>{{ player.bracket_status }}. Thanks for playing — follow the rest of the bracket on the main screen.</p></div>
+{% elif t.type == 'bracket' %}
+  <div class="card"><p>You're through! Waiting to see who you play next.</p></div>
+{% elif t.type == 'swiss' and has_bye %}
+  <div class="card"><p>You have a bye in round {{ t.current_round }} — it counts as a win. You'll be paired again next round.</p></div>
+{% elif t.type == 'swiss' and t.current_round >= t.rounds %}
+  <div class="card"><p>All {{ t.rounds }} rounds are done. Check the standings!</p></div>
+{% elif t.type == 'swiss' %}
+  <div class="card"><p>Your game this round is done. Round {{ t.current_round + 1 }} is paired once every game in round {{ t.current_round }} finishes — you'll play someone with the same record.</p></div>
+{% else %}
+  <div class="card"><p>You're in the queue. Players with the fewest games go next.</p></div>
+{% endif %}
+
+<div class="stat-row">
+  <div><b>#{{ player.rank }}</b><span>Rank</span></div>
+  <div><b>{{ player.elo }}</b><span>Rating</span></div>
+  <div><b>{{ player.wins }}–{{ player.losses }}</b><span>Record</span></div>
+</div>
+{% if t.type == 'swiss' and player.seed %}
+  <p style="text-align:center"><span class="badge badge-seed">Currently #{{ player.seed }} — top {{ t.qualify_count }}</span></p>
+{% elif t.type != 'elo' %}
+{% elif player.games_needed %}
+  <p class="muted small" style="text-align:center">Play {{ player.games_needed }} more game{{ 's' if player.games_needed != 1 }} to be eligible for the top {{ t.qualify_count }}.</p>
+{% elif player.seed %}
+  <p style="text-align:center"><span class="badge badge-seed">Currently seed #{{ player.seed }} of {{ t.qualify_count }}</span></p>
+{% endif %}
+
+{% if history %}
+  <div class="card">
+    <h2>Your games</h2>
+    <table>
+      {% for m in history %}
+        {% set mine_first = m.player1_id == player.id %}
+        {% set opp = m.p2 if mine_first else m.p1 %}
+        {% set won = m.winner_id == player.id %}
+        <tr>
+          <td>{{ 'W' if won else 'L' }} vs {{ opp.name }}{% if m.walkover %} <span class="muted small">(forfeit)</span>{% endif %}</td>
+          <td class="muted">{% if m.p1_score is not none and m.p2_score is not none %}{{ m.p1_score if mine_first else m.p2_score }}–{{ m.p2_score if mine_first else m.p1_score }}{% endif %}</td>
+          {% if t.type == 'elo' %}<td class="num {{ 'up' if won else 'down' }}">{% if m.walkover %}—{% else %}{{ '+' if won else '−' }}{{ m.elo_change }}{% endif %}</td>{% endif %}
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endif %}
+
+<p style="text-align:center; margin-top:1.5rem">
+  <a href="{{ url_for('leaderboard', tid=t.id) }}">View leaderboard</a>
+</p>
+<form method="post" action="{{ url_for('forget_me', tid=t.id) }}" style="text-align:center">
+  <button class="btn-link" type="submit">Not {{ player.first_name }}? Sign up someone else</button>
+</form>
+{% endblock %}

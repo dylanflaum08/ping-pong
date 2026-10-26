@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid grid-2">
+  <section class="card">
+    <h1>Start a tournament</h1>
+    <p class="muted">Creates a new tournament with its own players, ratings and QR signup code.</p>
+    <form method="post" action="{{ url_for('create_tournament') }}">
+      <div class="field">
+        <label for="name">Tournament name</label>
+        <input type="text" id="name" name="name" maxlength="60" placeholder="e.g. Fall Ping Pong Classic" required autofocus>
+      </div>
+      <div class="field">
+        <label>Tournament type</label>
+        <div class="types">
+          {% for value, title, desc in [
+              ('elo', 'Elo based', 'Open play. Whoever has played the least goes next; top 8 by rating advance.'),
+              ('bracket', 'Bracket', 'Single elimination. Randomize the draw or set every matchup yourself.'),
+              ('swiss', 'Round robin', 'Play in rounds; people with the same record play each other (1-0 vs 1-0).')] %}
+            <input type="radio" name="type" id="type-{{ value }}" value="{{ value }}" {{ 'checked' if loop.first }}>
+            <label for="type-{{ value }}"><b>{{ title }}</b><span>{{ desc }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="row">
+        <div class="field" data-for-type="swiss">
+          <label for="rounds">Rounds</label>
+          <input type="number" id="rounds" name="rounds" min="1" max="20" value="3">
+        </div>
+        <div class="field">
+          <label for="num_tables">Number of tables</label>
+          <input type="number" id="num_tables" name="num_tables" min="1" max="20" value="2">
+        </div>
+        <div class="field">
+          <label for="admin_pin">Admin PIN <span class="small">(optional)</span></label>
+          <input type="password" id="admin_pin" name="admin_pin" maxlength="20" inputmode="numeric" autocomplete="new-password">
+        </div>
+      </div>
+      <p class="small muted">The PIN keeps players from entering results from their phones. You can change it later.</p>
+      <button class="btn btn-primary btn-big" type="submit">Start tournament</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Tournaments</h2>
+    {% if tournaments %}
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Status</th><th class="num">Players</th><th class="num">Games</th></tr></thead>
+        <tbody>
+        {% for tr in tournaments %}
+          <tr>
+            <td><a href="{{ url_for('admin', tid=tr.id) }}">{{ tr.name }}</a><br><span class="small muted">{{ tr.created_at[:16] }}</span></td>
+            <td class="small">{{ TYPES[tr.type] }}</td>
+            <td>{% include "_status.html" %}</td>
+            <td class="num">{{ tr.player_count }}</td>
+            <td class="num">{{ tr.match_count }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No tournaments yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show fields that only apply to the selected tournament type.
+  const typeInputs = document.querySelectorAll('input[name="type"]');
+  function syncType() {
+    const type = document.querySelector('input[name="type"]:checked').value;
+    document.querySelectorAll("[data-for-type]").forEach(el => { el.hidden = el.dataset.forType !== type; });
+  }
+  typeInputs.forEach(i => i.addEventListener("change", syncType));
+  syncType();
+</script>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Join {{ t.name }}{% endblock %}
+{% block topbar %}{% endblock %}
+{% block container_class %}narrow{% endblock %}
+{% block content %}
+<div class="hero">
+  <span class="ball"></span>
+  <h1>{{ t.name }}</h1>
+  <p class="muted">Sign up to play. Your matchups will appear on the main screen.</p>
+</div>
+
+{% if closed %}
+  <div class="card"><p>Signups for this tournament are closed.</p></div>
+{% else %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  <form class="card" method="post" autocomplete="off">
+    <div class="field">
+      <label for="first_name">First name</label>
+      <input type="text" id="first_name" name="first_name" maxlength="40" value="{{ form.first_name }}" required autocapitalize="words">
+    </div>
+    <div class="field">
+      <label for="last_name">Last name</label>
+      <input type="text" id="last_name" name="last_name" maxlength="40" value="{{ form.last_name }}" required autocapitalize="words">
+    </div>
+    {% if t.type == 'elo' %}
+    <div class="field">
+      <label>Your ping pong level</label>
+      <div class="levels">
+        {% for n, title, desc in [(1, 'Beginner', 'Just for fun'), (2, 'Casual', 'Play now and then'), (3, 'Intermediate', 'Solid rallies & spin'), (4, 'Advanced', 'Bring your own paddle')] %}
+          <input type="radio" name="level" id="level{{ n }}" value="{{ n }}" {{ 'checked' if form.level == n|string }} required>
+          <label for="level{{ n }}"><b>{{ n }}</b>{{ title }}<br><span>{{ desc }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    <button class="btn btn-primary btn-big" type="submit">Join tournament</button>
+  </form>
+{% endif %}
+{% endblock %}

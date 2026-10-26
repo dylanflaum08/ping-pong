@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}Admin — {{ t.name }}{% endblock %}
+{% block content %}
+
+<section class="card">
+  <div class="card-head">
+    <h1 style="margin:0">{{ t.name }} {% include "_status.html" %}</h1>
+    <span class="badge">{{ TYPES[t.type] }}{% if t.type == 'swiss' %} · {{ t.rounds }} rounds{% endif %}</span>
+    <div class="row">
+      <a class="btn" href="{{ url_for('display', tid=t.id) }}" target="_blank">Open main screen ↗</a>
+      <a class="btn" href="{{ url_for('admin', tid=t.id) }}">↻ Refresh</a>
+      {% if t.status == 'registration' and t.type == 'bracket' %}
+        <a class="btn btn-primary" href="{{ url_for('bracket_setup', tid=t.id) }}">Set up bracket →</a>
+      {% elif t.status == 'registration' %}
+        <form class="inline" method="post" action="{{ url_for('admin_begin', tid=t.id) }}">
+          <button class="btn btn-primary" type="submit">Begin play</button>
+        </form>
+      {% elif t.status == 'in_progress' %}
+        {% if can_reset_bracket %}
+          <form class="inline" method="post" action="{{ url_for('admin_bracket_reset', tid=t.id) }}"
+                onsubmit="return confirm('Go back to bracket setup? Signups will reopen.')">
+            <button class="btn" type="submit">Redo bracket</button>
+          </form>
+        {% endif %}
+        <form class="inline" method="post" action="{{ url_for('admin_finish', tid=t.id) }}"
+              onsubmit="return confirm('End the tournament? No new matchups will be created.')">
+          <button class="btn" type="submit">End tournament</button>
+        </form>
+      {% else %}
+        <form class="inline" method="post" action="{{ url_for('admin_reopen', tid=t.id) }}">
+          <button class="btn" type="submit">Reopen</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+  <p class="muted" style="margin:0">
+    {{ players|selectattr('active')|list|length }} active players · {{ completed|length }} games played ·
+    {{ t.num_tables }} table{{ 's' if t.num_tables != 1 }} ·
+    Signup link: <a href="{{ join_url }}" target="_blank">{{ join_url }}</a>
+  </p>
+  {% if t.status == 'registration' %}
+    <p class="small" style="margin-bottom:0">
+      {% if t.type == 'bracket' %}
+        Players can sign up now. When everyone's here, press <b>Set up bracket</b> to randomize or hand-pick the draw. Signups close once the bracket starts.
+      {% elif t.type == 'swiss' %}
+        Players can sign up now. Press <b>Begin play</b> to pair round 1. Each new round is paired automatically when the last game of the round is entered; people with the same record play each other. Late arrivals join from the next round.
+      {% else %}
+        Players can sign up now. Press <b>Begin play</b> when you're ready and the first matchups will be created. Late arrivals can still join.
+      {% endif %}
+    </p>
+  {% elif t.type == 'swiss' and t.status == 'in_progress' %}
+    <p class="small" style="margin-bottom:0"><b>Round {{ t.current_round }} of {{ t.rounds }}</b>{% if bye %} · {{ bye }} has a bye this round (counts as a win){% endif %}{% if t.current_round >= t.rounds and not pending %} · All rounds complete — check the leaderboard.{% endif %}</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ live matches #}
+<section class="card">
+  <div class="card-head">
+    <h2>Current matches</h2>
+    {% if t.type == 'elo' and t.status == 'in_progress' and open_tables > 0 %}
+      <form class="inline" method="post" action="{{ url_for('admin_generate', tid=t.id) }}">
+        <span class="muted small">{{ open_tables }} open table{{ 's' if open_tables != 1 }}, {{ idle }} free player{{ 's' if idle != 1 }}</span>
+        <button class="btn btn-sm" type="submit">Fill open tables</button>
+      </form>
+    {% endif %}
+  </div>
+  {% if pending %}
+    <p class="muted small">Tap the winner. Scores are optional.{% if t.type != 'elo' %} Matches marked “On deck” move onto a table as soon as one frees up.{% endif %}</p>
+    <div class="matches">
+      {% for m in pending %}
+        <form class="match" method="post" action="{{ url_for('admin_result', tid=t.id, mid=m.id) }}">
+          <div class="match-head">
+            <span class="table-no">{{ 'Table ' ~ m.table_no if m.table_no else 'On deck' }}{% if m.round %} · {{ round_label(m.round) }}{% endif %}</span>
+            {% if t.type == 'elo' %}
+            <button class="btn-link" type="submit" formaction="{{ url_for('admin_cancel', tid=t.id, mid=m.id) }}"
+                    formnovalidate onclick="return confirm('Cancel this match without a result?')">Cancel match</button>
+            {% endif %}
+          </div>
+          {% for side, p in [('p1', m.p1), ('p2', m.p2)] %}
+            <div class="side">
+              <button class="btn" type="submit" name="winner" value="{{ p.id }}"
+                      onclick='return confirm({{ (p.name ~ " won?")|tojson }})'>
+                <span class="who">🏆 {{ p.name }}<small>{% if t.type == 'elo' %}Rating {{ p.elo }} · Level {{ p.level }} · {{ p.games_played }} played{% else %}{{ p.wins }}–{{ p.losses }} · Rating {{ p.elo }}{% endif %}</small></span>
+              </button>
+              <input type="number" name="{{ side }}_score" min="0" max="99" placeholder="pts" aria-label="{{ p.name }} score">
+            </div>
+          {% endfor %}
+        </form>
+      {% endfor %}
+    </div>
+  {% elif t.status == 'registration' %}
+    <p class="muted">Matches will appear here after you press <b>Begin play</b>.</p>
+  {% elif t.status == 'completed' %}
+    <p class="muted">No games in progress.</p>
+  {% elif t.type == 'swiss' and t.current_round >= t.rounds %}
+    <p class="muted">All {{ t.rounds }} rounds are complete — final standings are below. Press <b>End tournament</b> to close signups.</p>
+  {% else %}
+    <p class="muted">No matches right now — waiting for at least two free players.</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ players #}
+<section class="card">
+  <div class="card-head">
+    <h2>Players</h2>
+    <a href="{{ url_for('leaderboard', tid=t.id) }}">Full leaderboard →</a>
+  </div>
+
+  <form class="row" method="post" action="{{ url_for('admin_add_player', tid=t.id) }}" style="margin-bottom:1rem">
+    <div class="field"><label>First name</label><input type="text" name="first_name" maxlength="40" required></div>
+    <div class="field"><label>Last name</label><input type="text" name="last_name" maxlength="40" required></div>
+    {% if t.type == 'elo' %}
+    <div class="field" style="flex:0 0 120px"><label>Level</label>
+      <select name="level">{% for n in range(1, 5) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+    </div>
+    {% endif %}
+    <div class="field" style="flex:0 0 auto"><button class="btn" type="submit">Add player</button></div>
+  </form>
+
+  {% if players %}
+    <table>
+      <thead><tr><th>Name</th>{% if t.type == 'elo' %}<th class="num">Level</th>{% endif %}<th class="num">Rating</th><th class="num">W–L</th><th class="num">Games</th><th></th></tr></thead>
+      <tbody>
+      {% for p in players %}
+        <tr class="{{ 'inactive' if not p.active }}">
+          <td>
+            <details>
+              <summary><b style="color:var(--text)">{{ p.name }}</b>{% if not p.active %} <span class="badge">Withdrawn</span>{% endif %}</summary>
+              <form class="row" method="post" action="{{ url_for('admin_update_player', tid=t.id, pid=p.id) }}">
+                <div class="field"><input type="text" name="first_name" value="{{ p.first_name }}" maxlength="40" required></div>
+                <div class="field"><input type="text" name="last_name" value="{{ p.last_name }}" maxlength="40" required></div>
+                {% if t.type == 'elo' %}
+                <div class="field" style="flex:0 0 80px">
+                  <select name="level">{% for n in range(1, 5) %}<option value="{{ n }}" {{ 'selected' if n == p.level }}>{{ n }}</option>{% endfor %}</select>
+                </div>
+                {% endif %}
+                <div class="field" style="flex:0 0 auto"><button class="btn btn-sm" type="submit">Save</button></div>
+              </form>
+              {% if t.type == 'elo' %}<p class="small muted" style="margin:0">Changing level changes their starting rating; all ratings are recalculated.</p>{% endif %}
+            </details>
+          </td>
+          {% if t.type == 'elo' %}<td class="num"><span class="lvl">{{ p.level }}</span></td>{% endif %}
+          <td class="num">{{ p.elo }}</td>
+          <td class="num">{{ p.wins }}–{{ p.losses }}</td>
+          <td class="num">{{ p.games_played }}</td>
+          <td class="num">
+            <form class="inline" method="post" action="{{ url_for('admin_toggle_player', tid=t.id, pid=p.id) }}"
+                  {% if p.active %}onsubmit='return confirm({{ ("Remove " ~ p.name ~ " from the tournament? " ~ ("Any match they are in will be cancelled." if t.type == "elo" else "Their opponent will win by forfeit."))|tojson }})'{% endif %}>
+              <button class="btn btn-sm {{ 'btn-danger' if p.active }}" type="submit">{{ 'Withdraw' if p.active else 'Reinstate' }}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No players yet. Put the main screen up so people can scan the QR code.</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ standings #}
+{% if completed %}
+<section class="card">
+  <div class="card-head">
+    <h2>Standings</h2>
+    <span class="muted small">
+      {% if t.type == 'swiss' %}By record · ties broken by opponents' total wins, then rating
+      {% elif t.type == 'bracket' %}By how far each player got, then record
+      {% else %}By rating · top {{ t.qualify_count }} with {{ t.min_games }}+ games advance{% endif %}
+    </span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th class="num">#</th><th>Player</th><th class="num">Record</th>
+        {% if t.type == 'swiss' %}<th class="num">Opp. wins</th>{% endif %}
+        {% if t.type == 'elo' %}<th class="num">Rating</th>{% endif %}
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in standings %}
+      <tr class="{{ 'inactive' if not p.active }}">
+        <td class="num">{{ p.rank }}</td>
+        <td><b>{{ p.name }}</b></td>
+        <td class="num"><b>{{ p.wins }}–{{ p.losses }}</b></td>
+        {% if t.type == 'swiss' %}<td class="num">{{ p.opp_wins }}</td>{% endif %}
+        {% if t.type == 'elo' %}<td class="num">{{ p.elo }}</td>{% endif %}
+        <td>
+          {% if t.type == 'bracket' %}
+            {% if p.bracket_status == 'Champion' %}<span class="badge badge-seed">🏆 Champion</span>
+            {% elif p.bracket_status == 'Still in' %}<span class="badge badge-live">Still in</span>
+            {% else %}<span class="muted small">{{ p.bracket_status }}</span>{% endif %}
+          {% elif not p.active %}<span class="badge">Withdrawn</span>
+          {% elif p.seed %}<span class="badge badge-seed">Top {{ t.qualify_count }}</span>
+          {% elif p.games_needed %}<span class="muted small">Needs {{ p.games_needed }} more</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------ results #}
+<section class="card">
+  <h2>Results</h2>
+  {% if completed %}
+    <table>
+      <thead><tr><th class="num">#</th><th>Winner</th><th>Loser</th><th>Score</th>{% if t.type == 'elo' %}<th class="num">Rating change</th>{% endif %}<th></th></tr></thead>
+      <tbody>
+      {% for m in completed %}
+        {% set p1_won = m.winner_id == m.player1_id %}
+        <tr>
+          <td class="num muted">{{ m.completed_seq }}{% if m.round %}<br><span class="small">{{ round_label(m.round) }}</span>{% endif %}</td>
+          <td><b>{{ (m.p1 if p1_won else m.p2).name }}</b></td>
+          <td>{{ (m.p2 if p1_won else m.p1).name }}</td>
+          <td class="muted">{% if m.walkover %}Forfeit{% elif m.p1_score is not none and m.p2_score is not none %}{{ m.p1_score if p1_won else m.p2_score }}–{{ m.p2_score if p1_won else m.p1_score }}{% endif %}</td>
+          {% if t.type == 'elo' %}<td class="num">{% if m.walkover %}<span class="muted">—</span>{% else %}<span class="up">±{{ m.elo_change }}</span>{% endif %}</td>{% endif %}
+          <td>
+            <details>
+              <summary class="small">Edit</summary>
+              <form method="post" action="{{ url_for('admin_edit', tid=t.id, mid=m.id) }}">
+                {% for side, p in [('p1', m.p1), ('p2', m.p2)] %}
+                  <div class="row" style="margin-bottom:.4rem">
+                    <label style="flex:1; margin:0; color:var(--text)">
+                      <input type="radio" name="winner" value="{{ p.id }}" {{ 'checked' if m.winner_id == p.id }}> {{ p.name }} won
+                    </label>
+                    <input type="number" name="{{ side }}_score" min="0" max="99" value="{{ m[side ~ '_score'] if m[side ~ '_score'] is not none }}" placeholder="pts" style="width:80px">
+                  </div>
+                {% endfor %}
+                <button class="btn btn-sm" type="submit">Save</button>
+                <button class="btn btn-sm btn-danger" type="submit" formaction="{{ url_for('admin_delete', tid=t.id, mid=m.id) }}"
+                        onclick="return confirm({{ ('Delete this result? Ratings will be recalculated.' if t.type == 'elo' else 'Clear this result? The match goes back in the queue to be replayed.')|tojson }})">{{ 'Delete' if t.type == 'elo' else 'Reset to unplayed' }}</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No results yet.</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ settings #}
+<section class="card">
+  <h2>Settings</h2>
+  <form method="post" action="{{ url_for('admin_settings', tid=t.id) }}">
+    <div class="row">
+      <div class="field" style="flex:2 1 240px"><label>Tournament name</label><input type="text" name="name" value="{{ t.name }}" maxlength="60"></div>
+      <div class="field"><label>Tables</label><input type="number" name="num_tables" value="{{ t.num_tables }}" min="1" max="20"></div>
+      <div class="field"><label>Type</label>
+        {% if t.status == 'registration' %}
+          <select name="type">{% for value, label in TYPES.items() %}<option value="{{ value }}" {{ 'selected' if value == t.type }}>{{ label }}</option>{% endfor %}</select>
+        {% else %}
+          <input type="text" value="{{ TYPES[t.type] }}" disabled title="The format can't change once play has started">
+        {% endif %}
+      </div>
+      {% if t.type == 'swiss' %}
+        <div class="field"><label>Rounds</label><input type="number" name="rounds" value="{{ t.rounds }}" min="{{ [1, t.current_round]|max }}" max="20"></div>
+      {% endif %}
+      {% if t.type == 'elo' %}
+        <div class="field"><label>Min. games to qualify</label><input type="number" name="min_games" value="{{ t.min_games }}" min="0" max="50"></div>
+      {% endif %}
+      {% if t.type != 'bracket' %}
+        <div class="field"><label>Players who advance</label><input type="number" name="qualify_count" value="{{ t.qualify_count }}" min="1" max="128"></div>
+      {% endif %}
+      <div class="field"><label>Admin PIN <span class="small">(blank = none)</span></label><input type="password" name="admin_pin" value="{{ t.admin_pin or '' }}" maxlength="20" autocomplete="new-password"></div>
+    </div>
+    <button class="btn" type="submit">Save settings</button>
+  </form>
+
+  <details style="margin-top:1.5rem">
+    <summary class="small">Delete tournament</summary>
+    <form method="post" action="{{ url_for('admin_delete_tournament', tid=t.id) }}" class="row" style="margin-top:.6rem">
+      <div class="field"><label>Type <b>{{ t.name }}</b> to confirm</label><input type="text" name="confirm_name" required></div>
+      <div class="field" style="flex:0 0 auto"><button class="btn btn-danger" type="submit">Delete permanently</button></div>
+    </form>
+  </details>
+</section>
+{% endblock %}

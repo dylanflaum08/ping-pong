@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ping Pong Tournament{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% block topbar %}
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('home') }}"><span class="ball"></span> Ping Pong</a>
+    {% if t is defined and t %}
+      <span class="muted">/ {{ t.name }}</span>
+      <nav>
+        <a href="{{ url_for('display', tid=t.id) }}" class="{{ 'active' if request.endpoint == 'display' }}">Main screen</a>
+        <a href="{{ url_for('leaderboard', tid=t.id) }}" class="{{ 'active' if request.endpoint == 'leaderboard' }}">Leaderboard</a>
+        <a href="{{ url_for('admin', tid=t.id) }}" class="{{ 'active' if request.endpoint == 'admin' }}">Results &amp; admin</a>
+      </nav>
+    {% endif %}
+  </header>
+{% endblock %}
+<main class="container {% block container_class %}{% endblock %}">
+  {% with messages = get_flashed_messages() %}
+    {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

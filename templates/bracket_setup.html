@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Bracket setup — {{ t.name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h1 style="margin:0">Set up the bracket</h1>
+    <div class="row">
+      <form class="inline" method="post" action="{{ url_for('admin_bracket_randomize', tid=t.id) }}">
+        <button class="btn" type="submit">🎲 Randomize</button>
+      </form>
+      <form class="inline" method="post" action="{{ url_for('admin_bracket_clear', tid=t.id) }}">
+        <button class="btn" type="submit">Clear</button>
+      </form>
+    </div>
+  </div>
+  <p class="muted" style="margin:0">
+    {{ players|length }} players → a {{ size }}-player bracket starting with the {{ round_name }}{% if size > players|length %}
+    ({{ size - players|length }} bye{{ 's' if size - players|length != 1 }} — a player facing “Bye” goes straight through){% endif %}.
+    Randomize for a random draw, or pick each matchup yourself. Signups close when the bracket starts.
+  </p>
+</section>
+
+{% if players|length < 2 %}
+  <div class="card"><p>You need at least two players before you can set up a bracket.
+    <a href="{{ url_for('admin', tid=t.id) }}">Back to admin</a></p></div>
+{% else %}
+<form method="post" action="{{ url_for('admin_bracket_start', tid=t.id) }}" id="bracket-form">
+  <input type="hidden" name="size" value="{{ size }}">
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ round_name }}</h2>
+      <span id="unplaced" class="muted small"></span>
+    </div>
+    <div class="matches">
+      {% for k in range(size // 2) %}
+        <div class="match">
+          <div class="match-head"><span class="table-no">Match {{ k + 1 }}</span></div>
+          {% for i in (2 * k, 2 * k + 1) %}
+            <div class="field" style="margin-bottom:.5rem">
+              <select name="slot{{ i }}" class="slot" aria-label="Match {{ k + 1 }} player {{ loop.index }}">
+                <option value="">— Bye —</option>
+                {% for p in players %}
+                  <option value="{{ p.id }}" {{ 'selected' if slots[i] == p.id }}>{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% if loop.first %}<div class="muted small" style="text-align:center; margin:-.2rem 0 .3rem">vs</div>{% endif %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+  <div class="row" style="justify-content:flex-end">
+    <a class="btn" href="{{ url_for('admin', tid=t.id) }}">Back</a>
+    <button class="btn btn-primary" type="submit">Start bracket</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Each player can only be placed once: hide them from the other dropdowns.
+  const selects = [...document.querySelectorAll("select.slot")];
+  const total = {{ players|length }};
+  function sync() {
+    const used = new Set(selects.map(s => s.value).filter(Boolean));
+    selects.forEach(s => {
+      [...s.options].forEach(o => { if (o.value) o.hidden = used.has(o.value) && o.value !== s.value; });
+    });
+    const left = total - used.size;
+    const el = document.getElementById("unplaced");
+    if (el) el.textContent = left ? `${left} player${left === 1 ? "" : "s"} not placed yet` : "Everyone is placed ✓";
+  }
+  selects.forEach(s => s.addEventListener("change", sync));
+  sync();
+</script>
+{% endblock %}

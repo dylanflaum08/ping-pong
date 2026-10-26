@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Admin login — {{ t.name }}{% endblock %}
+{% block container_class %}narrow{% endblock %}
+{% block content %}
+<form class="card" method="post">
+  <h1>Organizer access</h1>
+  <p class="muted">Enter the admin PIN for <b>{{ t.name }}</b> to record results.</p>
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  <div class="field">
+    <label for="pin">Admin PIN</label>
+    <input type="password" id="pin" name="pin" inputmode="numeric" autofocus required>
+  </div>
+  <button class="btn btn-primary btn-big" type="submit">Continue</button>
+</form>
+{% endblock %}

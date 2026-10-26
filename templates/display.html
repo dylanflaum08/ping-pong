@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ t.name }} — Main screen{% endblock %}
+{% block body_class %}display{% endblock %}
+{% block topbar %}{% endblock %}
+{% block container_class %}display-container{% endblock %}
+
+{% block content %}
+<div class="display-wrap">
+  <div class="display-main">
+    <div class="display-title">
+      <h1><span class="ball"></span><span id="t-name">{{ t.name }}</span></h1>
+      <div id="status" class="muted" style="font-size:1.2rem; text-align:right"></div>
+    </div>
+
+    <section>
+      <p class="section-label" id="live-label">Now playing</p>
+      <div id="live"></div>
+    </section>
+
+    <section id="waiting-section">
+      <p class="section-label" id="waiting-label">Up next</p>
+      <div id="waiting"></div>
+    </section>
+
+    <section id="bracket-section" style="display:none">
+      <p class="section-label">Bracket</p>
+      <div id="bracket"></div>
+    </section>
+
+    <section id="recent-section">
+      <p class="section-label">Recent results</p>
+      <div id="recent" class="recent"></div>
+    </section>
+  </div>
+
+  <aside class="display-side">
+    <div class="qr-card" id="qr-card">
+      <h2>Scan to join</h2>
+      <img src="{{ url_for('qr', tid=t.id) }}" alt="QR code to join the tournament">
+      <div class="url">{{ join_url }}</div>
+    </div>
+    <div class="panel" style="flex:1; overflow:hidden">
+      <p class="section-label"><span id="leaders-title">Leaderboard</span> <span id="cut-note" class="small" style="text-transform:none; letter-spacing:0"></span></p>
+      <div id="leaders"></div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='bracket.js') }}"></script>
+<script>
+const STATE_URL = "{{ url_for('api_state', tid=t.id) }}";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function playerLine(p, type) {
+  // Elo: rating matters most. Bracket / round robin: show the record.
+  return type === "elo"
+    ? `${p.elo} · Level ${p.level} · ${p.games} played`
+    : `${p.record} · Rating ${p.elo}`;
+}
+
+function statusText(s) {
+  const t = s.tournament;
+  if (t.status === "registration") return `${t.type_label} · Signup open · ${plural(s.player_count, "player")} registered`;
+  if (t.status === "completed") return `${t.type_label} · Tournament complete`;
+  if (t.type === "swiss") {
+    const done = t.current_round >= t.rounds && !s.current.length && !s.queued.length;
+    return done ? `All ${t.rounds} rounds complete` : `Round ${t.current_round} of ${t.rounds} · ${plural(s.player_count, "player")}`;
+  }
+  if (t.type === "bracket") return s.bracket && s.bracket.champion ? "Bracket complete" : `Bracket · ${plural(t.num_tables, "table")}`;
+  return `${plural(s.player_count, "player")} · ${plural(t.num_tables, "table")}` +
+         (s.all_min_met ? ` · Everyone has played ${t.min_games}+ games` : "");
+}
+
+function render(s) {
+  const t = s.tournament;
+  $("t-name").textContent = t.name;
+  document.title = t.name + " — Main screen";
+  $("status").textContent = statusText(s);
+  $("qr-card").style.display = s.signup_open ? "" : "none";
+
+  // ---- Now playing
+  if (t.status === "registration") {
+    $("live-label").textContent = "Registered players";
+    $("live").innerHTML = s.waiting.length
+      ? `<div class="chips">${s.waiting.map(p => `<span class="chip">${esc(p.name)}${t.type === "elo" ? ` <span class="lvl">L${p.level}</span>` : ""}</span>`).join("")}</div>`
+      : `<div class="empty">Scan the QR code to sign up — matches start soon!</div>`;
+    $("waiting-section").style.display = "none";
+  } else {
+    $("live-label").textContent = "Now playing";
+    $("live").innerHTML = s.current.length
+      ? `<div class="live-grid">${s.current.map(m => `
+          <div class="live">
+            <div class="table-no">Table ${m.table}${m.round ? ` · ${esc(m.round)}` : ""}</div>
+            <div class="versus">
+              <div class="p">${esc(m.p1.name)}<small>${playerLine(m.p1, t.type)}</small></div>
+              <div class="vs">VS</div>
+              <div class="p">${esc(m.p2.name)}<small>${playerLine(m.p2, t.type)}</small></div>
+            </div>
+          </div>`).join("")}</div>`
+      : `<div class="empty">${t.status === "completed" || statusText(s).includes("complete")
+            ? "All done — thanks for playing!" : "Waiting for more players…"}</div>`;
+
+    // ---- Up next
+    if (t.type === "elo") {
+      $("waiting-section").style.display = "";
+      $("waiting-label").textContent = `Waiting (${s.waiting.length}) — fewest games play next`;
+      $("waiting").innerHTML = s.waiting.length
+        ? `<div class="chips">${s.waiting.map(p => `<span class="chip">${esc(p.name)} <span class="badge">${p.games} played</span></span>`).join("")}</div>`
+        : `<span class="muted">Everyone is on a table.</span>`;
+    } else {
+      const items = s.queued.map(m => `<div><b>${esc(m.p1.name)}</b> vs <b>${esc(m.p2.name)}</b>
+          <small>${esc(m.round)}${t.type === "swiss" ? ` · ${m.p1.record} vs ${m.p2.record}` : ""}</small></div>`);
+      if (s.bye) items.push(`<div><b>${esc(s.bye)}</b> <small>has a bye this round (counts as a win)</small></div>`);
+      $("waiting-section").style.display = items.length ? "" : "none";
+      $("waiting-label").textContent = "Up next — on deck for the next free table";
+      $("waiting").innerHTML = `<div class="queue">${items.join("")}</div>`;
+    }
+  }
+
+  // ---- Bracket (bracket tournaments) / recent results (everything else)
+  const showBracket = t.type === "bracket" && t.status !== "registration";
+  $("bracket-section").style.display = showBracket ? "" : "none";
+  if (showBracket) renderBracket($("bracket"), s.bracket);
+  $("recent-section").style.display = s.recent.length && !showBracket ? "" : "none";
+  $("recent").innerHTML = s.recent.map(r => `
+    <div><b>${esc(r.winner)}</b> beat ${esc(r.loser)}${r.walkover ? ` <span class="muted">by forfeit</span>`
+      : `${r.score ? ` <span class="muted">${esc(r.score)}</span>` : ""}${t.type === "elo" ? ` <span class="up">+${r.change}</span>` : ""}`}</div>`).join("");
+
+  // ---- Sidebar standings
+  const leaderRow = (p, stat, extra) => `
+    <div class="leader ${p.seed || p.bracket_status === "Champion" ? "seeded" : ""}">
+      <div class="rank">${p.rank}</div>
+      <div>${esc(p.name)} ${extra}</div>
+      <div class="elo">${stat}</div>
+    </div>`;
+  if (t.type === "bracket") {
+    $("leaders-title").textContent = "Standings";
+    $("cut-note").textContent = "";
+    $("leaders").innerHTML = s.leaders.length
+      ? s.leaders.map(p => leaderRow(p, p.elo, `<span class="muted small">${esc(p.bracket_status || "")}</span>`)).join("")
+      : `<p class="muted">No players yet.</p>`;
+  } else if (t.type === "swiss") {
+    $("leaders-title").textContent = "Standings";
+    $("cut-note").textContent = `· top ${t.qualify_count} by record`;
+    $("leaders").innerHTML = s.leaders.length
+      ? s.leaders.map(p => leaderRow(p, `${p.wins}–${p.losses}`, `<span class="muted small">${p.elo}</span>`)).join("")
+      : `<p class="muted">No players yet.</p>`;
+  } else {
+    $("leaders-title").textContent = "Leaderboard";
+    $("cut-note").textContent = `· top ${t.qualify_count} after ${t.min_games} games advance`;
+    $("leaders").innerHTML = s.leaders.length
+      ? s.leaders.map(p => leaderRow(p, p.elo, `<span class="muted small">${p.wins}–${p.losses}</span>
+          ${p.games_needed ? `<span class="badge">${p.games_needed} more</span>` : ""}`)).join("")
+      : `<p class="muted">No players yet.</p>`;
+  }
+}
+
+async function refresh() {
+  try {
+    const res = await fetch(STATE_URL, {cache: "no-store"});
+    if (res.ok) render(await res.json());
+  } catch (e) { /* keep showing last state if the network blips */ }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+{% endblock %}
